@@ -5,11 +5,12 @@ import {
   Award,
   BookOpen,
   Calendar,
-  Clock,
   MapPin,
   Phone,
   Mail,
   ArrowLeft,
+  User,
+  ThumbsUp,
 } from "lucide-react";
 
 const DoctorDetails = () => {
@@ -17,9 +18,17 @@ const DoctorDetails = () => {
   const [doctor, setDoctor] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // ==== State cho Reviews ====
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [reviews, setReviews] = useState([]);
+  const [rating, setRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState("");
+  const [hoveredStar, setHoveredStar] = useState(0);
+
   useEffect(() => {
     if (!id) return;
 
+    // Lấy thông tin bác sĩ
     fetch(`http://localhost:5000/api/doctors/${id}`)
       .then((res) => {
         if (!res.ok) throw new Error("Không thể tải dữ liệu bác sĩ");
@@ -48,12 +57,25 @@ const DoctorDetails = () => {
           },
         };
         setDoctor(safeData);
-        setLoading(false);
       })
-      .catch((err) => {
-        console.error("❌ Lỗi load bác sĩ:", err);
-        setLoading(false);
-      });
+      .catch((err) => console.error("❌ Lỗi load bác sĩ:", err));
+
+    // Lấy review thật từ DB
+    fetch(`http://localhost:5000/api/reviews/doctor/${id}`)
+      .then((res) => res.json())
+      .then((data) => {
+        const mapped = data.map((r) => ({
+          id: r.review_id,
+          patientName: r.patientName || "Người dùng ẩn danh",
+          rating: parseFloat(r.rating),
+          date: r.created_at,
+          comment: r.comment,
+          likes: 0, // nếu DB chưa có cột likes thì FE tự set
+        }));
+        setReviews(mapped);
+      })
+      .catch((err) => console.error("❌ Lỗi load review:", err))
+      .finally(() => setLoading(false));
   }, [id]);
 
   const parseSafeArray = (field) => {
@@ -64,6 +86,70 @@ const DoctorDetails = () => {
     } catch {
       return [];
     }
+  };
+
+  // ==== Toggle form review ====
+  const toggleReviewForm = () => setShowReviewForm(!showReviewForm);
+
+  // ==== Gửi review mới ====
+  const handleSubmitReview = async (e) => {
+    e.preventDefault();
+    if (!reviewComment) return;
+
+    const newReview = {
+      appointment_id: 1, // TODO: lấy từ lịch hẹn thực tế
+      patient_id: 2, // TODO: lấy từ user login
+      doctor_id: doctor.id,
+      rating,
+      comment: reviewComment,
+    };
+
+    try {
+      const res = await fetch("http://localhost:5000/api/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newReview),
+      });
+
+      if (res.ok) {
+        // Load lại reviews
+        const updated = await fetch(
+          `http://localhost:5000/api/reviews/doctor/${doctor.id}`
+        ).then((r) => r.json());
+
+        const mapped = updated.map((r) => ({
+          id: r.review_id,
+          patientName: r.patientName || "Người dùng ẩn danh",
+          rating: parseFloat(r.rating),
+          date: r.created_at,
+          comment: r.comment,
+          likes: 0,
+        }));
+
+        setReviews(mapped);
+        setReviewComment("");
+        setShowReviewForm(false);
+        setRating(5);
+      }
+    } catch (err) {
+      console.error("❌ Lỗi gửi review:", err);
+    }
+  };
+
+  // ==== Like review (FE-only) ====
+  const handleLikeReview = (reviewId) => {
+    setReviews(
+      reviews.map((r) => (r.id === reviewId ? { ...r, likes: r.likes + 1 } : r))
+    );
+  };
+
+  // ==== Format ngày ====
+  const formatReviewDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString("vi-VN", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
   };
 
   if (loading)
@@ -111,7 +197,8 @@ const DoctorDetails = () => {
                 <div className="flex items-center mb-4">
                   <Star size={18} fill="gold" className="mr-1" />
                   <span>
-                    {doctor.rating} ({doctor.reviewCount} đánh giá)
+                    {doctor.rating ? Number(doctor.rating).toFixed(1) : "0.0"} (
+                    {doctor.reviewCount} đánh giá)
                   </span>
                 </div>
                 <p className="text-white italic">{doctor.bio}</p>
@@ -180,7 +267,7 @@ const DoctorDetails = () => {
               </section>
 
               {/* Publications */}
-              <section>
+              <section className="mb-8">
                 <h2 className="text-xl font-bold mb-4 text-gray-800 border-b pb-2">
                   Công Trình Nghiên Cứu
                 </h2>
@@ -195,6 +282,126 @@ const DoctorDetails = () => {
                     <li>Chưa có công trình nghiên cứu</li>
                   )}
                 </ul>
+              </section>
+
+              {/* ==== Reviews Section ==== */}
+              <section className="mb-8">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold text-gray-800 border-b pb-2">
+                    Đánh Giá Từ Bệnh Nhân
+                  </h2>
+                  <button
+                    onClick={toggleReviewForm}
+                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition duration-300 flex items-center"
+                  >
+                    <Star size={16} className="mr-1" />
+                    Viết đánh giá
+                  </button>
+                </div>
+
+                {/* Form viết review */}
+                {showReviewForm && (
+                  <div className="bg-gray-50 rounded-lg p-6 mb-6 border border-gray-200">
+                    <form onSubmit={handleSubmitReview}>
+                      <div className="mb-4">
+                        <label className="block text-gray-700 text-sm font-medium mb-2">
+                          Xếp hạng của bạn
+                        </label>
+                        <div className="flex">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              type="button"
+                              onClick={() => setRating(star)}
+                              onMouseEnter={() => setHoveredStar(star)}
+                              onMouseLeave={() => setHoveredStar(0)}
+                              className="text-2xl text-yellow-400 focus:outline-none"
+                            >
+                              <Star
+                                size={24}
+                                fill={
+                                  (hoveredStar || rating) >= star
+                                    ? "currentColor"
+                                    : "none"
+                                }
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <textarea
+                        className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-green-500"
+                        rows={4}
+                        placeholder="Chia sẻ trải nghiệm..."
+                        value={reviewComment}
+                        onChange={(e) => setReviewComment(e.target.value)}
+                        required
+                      />
+                      <div className="flex space-x-2 mt-4">
+                        <button
+                          type="button"
+                          onClick={toggleReviewForm}
+                          className="px-4 py-2 border border-gray-300 rounded-md"
+                        >
+                          Hủy
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                        >
+                          Gửi đánh giá
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+
+                {/* Danh sách review */}
+                <div className="space-y-6">
+                  {reviews.map((review) => (
+                    <div
+                      key={review.id}
+                      className="border-b border-gray-200 pb-6 last:border-0"
+                    >
+                      <div className="flex items-center mb-2">
+                        <div className="h-10 w-10 bg-gray-200 rounded-full flex items-center justify-center text-gray-600 mr-3">
+                          <User size={20} />
+                        </div>
+                        <div>
+                          <h4 className="font-medium text-gray-800">
+                            {review.patientName}
+                          </h4>
+                          <div className="flex items-center">
+                            <div className="flex text-yellow-400 mr-2">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <Star
+                                  key={star}
+                                  size={14}
+                                  fill={
+                                    review.rating >= star
+                                      ? "currentColor"
+                                      : "none"
+                                  }
+                                />
+                              ))}
+                            </div>
+                            <span className="text-gray-500 text-sm">
+                              {formatReviewDate(review.date)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-gray-600 mb-3">{review.comment}</p>
+                      <button
+                        onClick={() => handleLikeReview(review.id)}
+                        className="flex items-center text-gray-500 hover:text-green-600 text-sm"
+                      >
+                        <ThumbsUp size={14} className="mr-1" />
+                        Hữu ích ({review.likes})
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </section>
             </div>
 
