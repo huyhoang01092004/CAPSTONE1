@@ -1,28 +1,41 @@
 import React, { useState, useEffect } from "react";
 import { Phone, Mail, Menu, X, Bell } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-
-  // Sau này lấy từ BE (context / redux / api)
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState("");
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  // 🔥 Giả lập: khi BE trả về user đã login
+  // ✅ Lấy user từ state (navigate) hoặc localStorage
   useEffect(() => {
-    // ví dụ: fetch("/api/auth/me")
-    // .then(res => res.json())
-    // .then(data => {
-    //   setIsAuthenticated(true);
-    //   setUsername(data.username);
-    // });
-  }, []);
+    if (location.state?.user) {
+      setIsAuthenticated(true);
+      setUsername(location.state.user.name);
+
+      // Lưu vào localStorage để giữ khi F5
+      localStorage.setItem("user", JSON.stringify(location.state.user));
+      if (location.state.token) {
+        localStorage.setItem("token", location.state.token);
+      }
+    } else {
+      const storedUser = localStorage.getItem("user");
+      if (storedUser) {
+        const user = JSON.parse(storedUser);
+        setIsAuthenticated(true);
+        setUsername(user.name);
+      }
+    }
+  }, [location.state]);
 
   const handleLogout = () => {
-    // Gọi API logout về BE
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
     setIsAuthenticated(false);
     setUsername("");
+    navigate("/login");
   };
 
   return (
@@ -96,7 +109,7 @@ const Header = () => {
             ) : (
               <>
                 <span className="font-medium text-green-700">
-                  Xin chào, {username || "Người dùng"}
+                  Xin chào, {username}
                 </span>
                 <button
                   onClick={handleLogout}

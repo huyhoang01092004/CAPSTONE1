@@ -114,3 +114,22 @@ export const remove = async (id) => {
   ]);
   return result.affectedRows;
 };
+export const findByDepartment = async (departmentId) => {
+  const [rows] = await db.execute(
+    `SELECT d.doctor_id, d.bio, d.office_room, d.department_id,
+            u.user_id, CONCAT(u.first_name, ' ', u.last_name) AS name, 
+            u.avatar_url, u.phone, u.email,
+            dept.name AS department_name,
+            IFNULL(ROUND(AVG(r.rating),1),0) AS rating, 
+            COUNT(r.review_id) AS reviewCount
+     FROM doctors d
+     JOIN users u ON d.user_id = u.user_id
+     LEFT JOIN departments dept ON d.department_id = dept.department_id
+     LEFT JOIN doctor_reviews r ON d.doctor_id = r.doctor_id
+     WHERE d.department_id = ?
+     GROUP BY d.doctor_id, u.user_id, u.first_name, u.last_name, 
+              u.avatar_url, u.phone, u.email, dept.name`,
+    [departmentId]
+  );
+  return rows;
+};

@@ -1,51 +1,91 @@
 import * as PatientModel from "../models/Patient.js";
 
+// 📌 Lấy danh sách bệnh nhân (sau này có thể thêm phân trang)
 export const getPatients = async (req, res) => {
   try {
     const patients = await PatientModel.findAll();
-    res.json(patients);
+    res.json({ success: true, data: patients });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("❌ getPatients error:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
+// 📌 Lấy bệnh nhân theo patient_id
 export const getPatientById = async (req, res) => {
   try {
     const patient = await PatientModel.findById(req.params.id);
-    if (!patient) return res.status(404).json({ message: "Patient not found" });
-    res.json(patient);
+    if (!patient) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Patient not found" });
+    }
+    res.json({ success: true, data: patient });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("❌ getPatientById error:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
+// 📌 Lấy bệnh nhân theo user_id
+export const getPatientByUserId = async (req, res) => {
+  try {
+    const patient = await PatientModel.findByUserId(req.params.userId);
+    if (!patient) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Patient not found for this user" });
+    }
+    res.json({ success: true, data: patient });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+// 📌 Tạo bệnh nhân mới
 export const createPatient = async (req, res) => {
   try {
+    if (!req.body.user_id) {
+      return res
+        .status(400)
+        .json({ success: false, message: "user_id is required" });
+    }
+
     const id = await PatientModel.create(req.body);
-    res.status(201).json({ patient_id: id });
+    res.status(201).json({ success: true, patient_id: id });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("❌ createPatient error:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
+// 📌 Cập nhật bệnh nhân
 export const updatePatient = async (req, res) => {
   try {
     const affected = await PatientModel.update(req.params.id, req.body);
-    if (!affected)
-      return res.status(404).json({ message: "Patient not found" });
-    res.json({ success: true });
+    if (!affected) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Patient not found" });
+    }
+    res.json({ success: true, message: "Patient updated successfully" });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("❌ updatePatient error:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
+// 📌 Xóa mềm bệnh nhân (deactivate user)
 export const deletePatient = async (req, res) => {
   try {
     const affected = await PatientModel.remove(req.params.id);
-    if (!affected)
-      return res.status(404).json({ message: "Patient not found" });
-    res.json({ success: true });
+    if (!affected) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Patient not found" });
+    }
+    res.json({ success: true, message: "Patient deactivated" });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("❌ deletePatient error:", err);
+    res.status(500).json({ success: false, error: err.message });
   }
 };

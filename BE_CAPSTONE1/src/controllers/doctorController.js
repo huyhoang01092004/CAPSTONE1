@@ -2,11 +2,19 @@ import * as Doctor from "../models/Doctor.js";
 
 export const getDoctors = async (req, res) => {
   try {
-    const doctors = await Doctor.findAll();
+    const { department_id } = req.query;
+    let doctors;
+
+    if (department_id) {
+      doctors = await Doctor.findByDepartment(department_id);
+    } else {
+      doctors = await Doctor.findAll();
+    }
+
     res.json(doctors);
-  } catch (err) {
-    console.error("❌ Lỗi khi lấy danh sách bác sĩ:", err);
-    res.status(500).json({ error: "Lỗi server" });
+  } catch (error) {
+    console.error("❌ Lỗi lấy danh sách bác sĩ:", error);
+    res.status(500).json({ message: "Server error" });
   }
 };
 

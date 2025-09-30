@@ -13,6 +13,7 @@ export const findAll = async () => {
   return rows;
 };
 
+// Tìm theo patient_id
 export const findById = async (id) => {
   const [rows] = await db.execute(
     `SELECT p.*, 
@@ -22,6 +23,20 @@ export const findById = async (id) => {
      JOIN users u ON p.user_id = u.user_id
      WHERE p.patient_id = ? AND u.is_active = 1`,
     [id]
+  );
+  return rows[0];
+};
+
+// Tìm bệnh nhân theo user_id
+export const findByUserId = async (userId) => {
+  const [rows] = await db.execute(
+    `SELECT p.*, 
+            CONCAT(u.first_name, ' ', u.last_name) AS full_name,
+            u.email, u.phone, u.gender, u.dob, u.avatar_url
+     FROM patients p
+     JOIN users u ON p.user_id = u.user_id
+     WHERE p.user_id = ? AND u.is_active = 1`,
+    [userId]
   );
   return rows[0];
 };
