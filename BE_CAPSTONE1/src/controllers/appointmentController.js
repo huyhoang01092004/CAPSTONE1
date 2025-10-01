@@ -5,10 +5,12 @@ import * as Appointment from "../models/appointmentModel.js";
 export const getAppointments = async (req, res) => {
   try {
     const data = await Appointment.findAll();
-    res.json(data);
+    res.json({ success: true, data });
   } catch (err) {
     console.error("❌ Lỗi getAppointments:", err);
-    res.status(500).json({ error: "Server error", details: err.message });
+    res
+      .status(500)
+      .json({ success: false, message: "Server error", details: err.message });
   }
 };
 
@@ -17,12 +19,16 @@ export const getAppointment = async (req, res) => {
   try {
     const data = await Appointment.findById(req.params.id);
     if (!data) {
-      return res.status(404).json({ message: "Appointment not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Appointment not found" });
     }
-    res.json(data);
+    res.json({ success: true, data });
   } catch (err) {
     console.error("❌ Lỗi getAppointment:", err);
-    res.status(500).json({ error: "Server error", details: err.message });
+    res
+      .status(500)
+      .json({ success: false, message: "Server error", details: err.message });
   }
 };
 
@@ -42,7 +48,7 @@ export const createAppointment = async (req, res) => {
       note,
     } = req.body;
 
-    // 🔎 1. Validate input
+    // 1. Validate input
     if (
       !patient_id ||
       !doctor_id ||
@@ -50,23 +56,25 @@ export const createAppointment = async (req, res) => {
       !scheduled_start ||
       !scheduled_end
     ) {
-      return res.status(400).json({ message: "Thiếu dữ liệu bắt buộc!" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Thiếu dữ liệu bắt buộc!" });
     }
 
-    // 🔎 2. Kiểm tra slot đã có người đặt chưa
+    // 2. Kiểm tra slot đã có người đặt chưa
     const available = await Appointment.isTimeSlotAvailable(
       doctor_id,
       scheduled_start,
       scheduled_end
     );
-
     if (!available) {
       return res.status(400).json({
+        success: false,
         message: "❌ Slot này đã được đặt, vui lòng chọn giờ khác.",
       });
     }
 
-    // 🆕 3. Tạo mới (ép undefined -> null)
+    // 3. Tạo mới
     const appointment = await Appointment.create({
       patient_id: patient_id ?? null,
       doctor_id: doctor_id ?? null,
@@ -80,10 +88,12 @@ export const createAppointment = async (req, res) => {
       note: note ?? null,
     });
 
-    res.status(201).json(appointment);
+    res.status(201).json({ success: true, data: appointment });
   } catch (err) {
     console.error("❌ Lỗi createAppointment:", err);
-    res.status(500).json({ message: "Server error", details: err.message });
+    res
+      .status(500)
+      .json({ success: false, message: "Server error", details: err.message });
   }
 };
 
@@ -92,25 +102,50 @@ export const updateAppointment = async (req, res) => {
   try {
     const updated = await Appointment.update(req.params.id, req.body);
     if (!updated) {
-      return res.status(404).json({ message: "Appointment not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Appointment not found" });
     }
-    res.json({ message: "Updated successfully", appointment: updated });
+    res.json({ success: true, message: "Updated successfully", data: updated });
   } catch (err) {
     console.error("❌ Lỗi updateAppointment:", err);
-    res.status(500).json({ error: "Server error", details: err.message });
+    res
+      .status(500)
+      .json({ success: false, message: "Server error", details: err.message });
   }
 };
 
 // 📌 Hủy lịch hẹn (soft delete)
-export const deleteAppointment = async (req, res) => {
+export const cancelAppointment = async (req, res) => {
   try {
-    const deleted = await Appointment.remove(req.params.id);
-    if (!deleted) {
-      return res.status(404).json({ message: "Appointment not found" });
+    const reason = req.body?.reason || "Cancelled by user";
+    const cancelled = await Appointment.cancel(req.params.id, reason);
+    if (!cancelled) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Appointment not found" });
     }
-    res.json({ message: "Deleted successfully" });
+    res.json({ success: true, message: "Cancelled successfully" });
   } catch (err) {
-    console.error("❌ Lỗi deleteAppointment:", err);
-    res.status(500).json({ error: "Server error", details: err.message });
+    console.error("❌ Lỗi cancelAppointment:", err);
+    res
+      .status(500)
+      .json({ success: false, message: "Server error", details: err.message });
+  }
+};
+
+// 📌 Lấy tất cả appointment liên quan tới user (đặt hộ + tự đặt)
+export const getAppointmentsByUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const rows = await Appointment.findByUser(userId, "both");
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    console.error("❌ getAppointmentsByUser:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      details: error.message,
+    });
   }
 };

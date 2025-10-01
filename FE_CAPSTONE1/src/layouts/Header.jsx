@@ -9,33 +9,67 @@ const Header = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ✅ Lấy user từ state (navigate) hoặc localStorage
+  // ✅ Lấy user khi component mount hoặc khi location.state thay đổi
   useEffect(() => {
     if (location.state?.user) {
+      const user = location.state.user;
       setIsAuthenticated(true);
-      setUsername(location.state.user.name);
+      setUsername(user.name);
 
-      // Lưu vào localStorage để giữ khi F5
-      localStorage.setItem("user", JSON.stringify(location.state.user));
+      // Lưu user + token vào localStorage để giữ khi F5
+      localStorage.setItem("user", JSON.stringify(user));
       if (location.state.token) {
         localStorage.setItem("token", location.state.token);
       }
     } else {
-      const storedUser = localStorage.getItem("user");
+      const storedUser =
+        localStorage.getItem("user") || sessionStorage.getItem("user");
       if (storedUser) {
         const user = JSON.parse(storedUser);
         setIsAuthenticated(true);
         setUsername(user.name);
+      } else {
+        setIsAuthenticated(false);
+        setUsername("");
       }
     }
   }, [location.state]);
 
+  // ✅ Nghe sự kiện login/logout từ các tab khác hoặc từ handleLogout
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const storedUser =
+        localStorage.getItem("user") || sessionStorage.getItem("user");
+      if (storedUser) {
+        const user = JSON.parse(storedUser);
+        setIsAuthenticated(true);
+        setUsername(user.name);
+      } else {
+        setIsAuthenticated(false);
+        setUsername("");
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, []);
+
   const handleLogout = () => {
+    // Xóa token + user ở cả localStorage và sessionStorage
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    sessionStorage.removeItem("token");
+    sessionStorage.removeItem("user");
+
+    // Reset state trong app
     setIsAuthenticated(false);
     setUsername("");
-    navigate("/login");
+
+    // Bắn event để các component khác (QuickBooking, Booking…) nhận
+    window.dispatchEvent(new Event("storage"));
+
+    // Chuyển hướng về Home
+    navigate("/home");
   };
 
   return (
@@ -57,12 +91,12 @@ const Header = () => {
 
         {/* Main nav */}
         <div className="flex justify-between items-center py-4">
-          <Link to="/" className="text-2xl font-bold text-green-600">
+          <Link to="/home" className="text-2xl font-bold text-green-600">
             Phòng Khám Sức Khỏe
           </Link>
 
           <nav className="hidden md:flex space-x-8">
-            <Link to="/" className="font-medium hover:text-green-600">
+            <Link to="/home" className="font-medium hover:text-green-600">
               Trang Chủ
             </Link>
             <Link to="/services" className="font-medium hover:text-green-600">

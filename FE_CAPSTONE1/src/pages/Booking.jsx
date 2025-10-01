@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Calendar,
   Clock,
@@ -31,22 +31,60 @@ const Booking = () => {
   const [date, setDate] = useState("");
   const [timeSlot, setTimeSlot] = useState("");
 
-  const [patientId, setPatientId] = useState(null); // 👈 thêm patientId
+  const [patientId, setPatientId] = useState(null);
+  const [bookingFor, setBookingFor] = useState("self");
   const [patientName, setPatientName] = useState("");
   const [patientPhone, setPatientPhone] = useState("");
   const [patientEmail, setPatientEmail] = useState("");
-  const [patientAge, setPatientAge] = useState("");
+  const [dob, setDob] = useState("");
   const [patientGender, setPatientGender] = useState("");
   const [reasonForVisit, setReasonForVisit] = useState("");
+  const [allergies, setAllergies] = useState("");
+  const [medicalHistory, setMedicalHistory] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
   const [step, setStep] = useState(1);
   const [showDepartmentInfo, setShowDepartmentInfo] = useState(null);
 
-  const [userId] = useState(8);
+  const navigate = useNavigate();
 
-  // ================== API CALLS ==================
+  // ✅ User & trạng thái load
+  const [storedUser, setStoredUser] = useState(null);
+  const [loadingUser, setLoadingUser] = useState(true);
+
+  const userId = storedUser?.id || null;
+  const patientIdFromUser = storedUser?.patient_id || null;
+
+  // ✅ Lấy user khi mount
+  useEffect(() => {
+    const user =
+      JSON.parse(localStorage.getItem("user")) ||
+      JSON.parse(sessionStorage.getItem("user"));
+    setStoredUser(user || null);
+    setLoadingUser(false); // Đã load xong
+  }, []);
+
+  // ✅ Nghe sự kiện login/logout
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const user =
+        JSON.parse(localStorage.getItem("user")) ||
+        JSON.parse(sessionStorage.getItem("user"));
+      setStoredUser(user || null);
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, []);
+
+  // ✅ Nếu chưa login thì chặn (chỉ check sau khi load xong)
+  useEffect(() => {
+    if (!loadingUser && !storedUser) {
+      alert("Vui lòng đăng nhập để đặt lịch!");
+      navigate("/login");
+    }
+  }, [loadingUser, storedUser, navigate]);
+
   useEffect(() => {
     fetch("http://localhost:5000/api/departments")
       .then((res) => res.json())
@@ -69,38 +107,53 @@ const Booking = () => {
     if (doctor && date) {
       fetch(`http://localhost:5000/api/doctors/${doctor}/slots?date=${date}`)
         .then((res) => res.json())
-        .then((data) => setAvailableTimeSlots(data.available_slots || []))
+        .then((data) => {
+          const slots = data.available_slots || [];
+          const now = new Date();
+
+          const filteredSlots = slots.filter((slot) => {
+            const slotStart = new Date(`${date}T${slot.start}:00`);
+            return slotStart > now; // chỉ lấy slot còn trong tương lai
+          });
+
+          setAvailableTimeSlots(filteredSlots);
+        })
         .catch((err) => console.error("❌ Lỗi lấy slots:", err));
     } else {
       setAvailableTimeSlots([]);
     }
   }, [doctor, date]);
 
-  // ✅ lấy thông tin bệnh nhân từ userId
   useEffect(() => {
-    if (userId) {
+    if (userId && bookingFor === "self") {
       fetch(`http://localhost:5000/api/patients/by-user/${userId}`)
         .then((res) => res.json())
         .then((data) => {
           if (data.success) {
             const p = data.data;
-            setPatientId(p.patient_id); // 👈 cần cho submit
+            setPatientId(p.patient_id);
             setPatientName(p.full_name || "");
             setPatientPhone(p.phone || "");
             setPatientEmail(p.email || "");
             setPatientGender(p.gender || "");
-            setPatientAge(
-              p.dob
-                ? new Date().getFullYear() - new Date(p.dob).getFullYear()
-                : ""
-            );
+            setDob(p.dob ? p.dob.split("T")[0] : ""); // Lấy yyyy-MM-dd
+            setAllergies(p.allergies || "");
+            setMedicalHistory(p.medical_history || "");
           }
         })
         .catch((err) => console.error("❌ Lỗi lấy patient:", err));
+    } else if (bookingFor === "other") {
+      setPatientId(null);
+      setPatientName("");
+      setPatientPhone("");
+      setPatientEmail("");
+      setPatientGender("");
+      setDob("");
+      setAllergies("");
+      setMedicalHistory("");
     }
-  }, [userId]);
+  }, [userId, bookingFor]);
 
-  // ================== HANDLERS ==================
   const toggleDepartmentInfo = (id) => {
     setShowDepartmentInfo(showDepartmentInfo === id ? null : id);
   };
@@ -120,17 +173,60 @@ const Booking = () => {
     .toISOString()
     .split("T")[0];
 
-  // ✅ fix handleSubmit
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
+
     try {
+      let finalPatientId = patientId;
+
+      if (bookingFor === "other") {
+        // 👉 Nếu đặt lịch cho người khác thì gọi API createGuestPatient
+        const resPatient = await fetch(
+          "http://localhost:5000/api/patients/guest",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              full_name: patientName,
+              phone: patientPhone,
+              email: patientEmail,
+              dob,
+              gender: patientGender,
+              allergies,
+              medical_history: medicalHistory,
+            }),
+          }
+        );
+
+        const dataPatient = await resPatient.json();
+        if (!resPatient.ok || !dataPatient.success) {
+          throw new Error(
+            dataPatient.message || "Tạo bệnh nhân guest thất bại"
+          );
+        }
+        finalPatientId = dataPatient.patient_id; // id mới tạo
+      } else {
+        // 👉 Nếu đặt lịch cho chính mình thì update thông tin y tế
+        if (finalPatientId) {
+          await fetch(`http://localhost:5000/api/patients/${finalPatientId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              allergies,
+              medical_history: medicalHistory,
+            }),
+          });
+        }
+      }
+
+      // 2️⃣ Tạo appointment
       const [start, end] = timeSlot.split("-");
       const res = await fetch("http://localhost:5000/api/appointments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          patient_id: patientId, // 👈 dùng patientId thay vì name/phone/email
+          patient_id: finalPatientId,
           doctor_id: doctor,
           department_id: department,
           scheduled_start: `${date} ${start}:00`,
@@ -142,6 +238,7 @@ const Booking = () => {
           note: null,
         }),
       });
+
       if (res.ok) {
         setBookingSuccess(true);
       } else {
@@ -150,12 +247,12 @@ const Booking = () => {
       }
     } catch (err) {
       console.error("❌ Submit error:", err);
+      alert("Có lỗi xảy ra khi xử lý. Vui lòng thử lại!");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Helper function to get department icon
   const getDepartmentIcon = (deptName) => {
     const name = deptName.toLowerCase();
     if (name.includes("tim") || name.includes("mạch"))
@@ -177,11 +274,9 @@ const Booking = () => {
     ? doctors.find((d) => String(d.doctor_id) === String(doctor))
     : null;
 
-  // ================== RENDER ==================
   return (
     <div className="bg-gray-50 min-h-screen pt-20">
       <div className="container mx-auto px-4 py-8">
-        {/* Header */}
         <div className="mb-6">
           <Link
             to="/"
@@ -202,8 +297,6 @@ const Booking = () => {
             </div>
           </div>
         </div>
-
-        {/* Success */}
         {bookingSuccess && (
           <div className="bg-white rounded-lg shadow-md p-8 mb-6 text-center">
             <div className="bg-green-100 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-4">
@@ -225,10 +318,8 @@ const Booking = () => {
           </div>
         )}
 
-        {/* Form */}
         {!bookingSuccess && (
           <div className="bg-white rounded-lg shadow-md overflow-hidden mb-8">
-            {/* Steps */}
             <div className="bg-gray-50 p-6 border-b">
               <div className="flex justify-between items-center relative max-w-3xl mx-auto">
                 <div className="absolute top-5 left-0 right-0 h-0.5 bg-gray-200 -z-0"></div>
@@ -259,7 +350,6 @@ const Booking = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 md:p-8">
-              {/* Step 1 */}
               {step === 1 && (
                 <div>
                   <h2 className="font-bold text-xl md:text-2xl mb-2">
@@ -322,7 +412,6 @@ const Booking = () => {
                 </div>
               )}
 
-              {/* Step 2 */}
               {step === 2 && (
                 <div>
                   <h2 className="font-bold text-xl md:text-2xl mb-2">
@@ -338,7 +427,7 @@ const Booking = () => {
                   </p>
                   <div className="grid md:grid-cols-2 gap-4">
                     {doctors.map((doc) => (
-                      <div key={doc.doctor_id} className="relative">
+                      <div key={doc.doctor_id}>
                         <input
                           type="radio"
                           id={`doc-${doc.doctor_id}`}
@@ -370,8 +459,6 @@ const Booking = () => {
                             <p className="text-sm text-green-600 mb-1">
                               {doc.department_name}
                             </p>
-
-                            {/* ⭐ Rating */}
                             <div className="flex items-center gap-2">
                               <div className="flex items-center">
                                 {[...Array(5)].map((_, i) => (
@@ -390,8 +477,6 @@ const Booking = () => {
                                 {doc.rating || "5.0"} ({doc.reviewCount || "0"})
                               </span>
                             </div>
-
-                            {/* 👇 Link xem chi tiết */}
                             <Link
                               to={`/doctor/${doc.doctor_id}`}
                               className="mt-2 inline-block text-sm text-blue-600 hover:underline"
@@ -406,7 +491,6 @@ const Booking = () => {
                 </div>
               )}
 
-              {/* Step 3 */}
               {step === 3 && (
                 <div>
                   <h2 className="font-bold text-xl md:text-2xl mb-2">
@@ -500,7 +584,6 @@ const Booking = () => {
                 </div>
               )}
 
-              {/* Step 4 */}
               {step === 4 && (
                 <div>
                   <h2 className="font-bold text-xl md:text-2xl mb-2">
@@ -511,7 +594,38 @@ const Booking = () => {
                     phục vụ bạn tốt nhất
                   </p>
 
-                  {/* Thông tin cá nhân */}
+                  <div className="mb-6">
+                    <h3 className="font-semibold text-gray-800 mb-4 text-lg">
+                      Bạn đang đặt lịch cho ai?
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <button
+                        type="button"
+                        onClick={() => setBookingFor("self")}
+                        className={`p-4 border-2 rounded-lg transition-all font-medium ${
+                          bookingFor === "self"
+                            ? "border-green-600 bg-green-50 text-green-700 shadow-sm"
+                            : "border-gray-300 text-gray-700 hover:border-green-300"
+                        }`}
+                      >
+                        <User className="mx-auto mb-2" size={24} />
+                        Đặt lịch cho tôi
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBookingFor("other")}
+                        className={`p-4 border-2 rounded-lg transition-all font-medium ${
+                          bookingFor === "other"
+                            ? "border-green-600 bg-green-50 text-green-700 shadow-sm"
+                            : "border-gray-300 text-gray-700 hover:border-green-300"
+                        }`}
+                      >
+                        <User className="mx-auto mb-2" size={24} />
+                        Đặt lịch cho người khác
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="mb-6">
                     <h3 className="font-semibold text-gray-800 mb-4 text-lg">
                       Thông tin cá nhân
@@ -531,8 +645,9 @@ const Booking = () => {
                             placeholder="Nguyễn Văn A"
                             value={patientName}
                             onChange={(e) => setPatientName(e.target.value)}
-                            className="w-full border-2 border-gray-300 px-10 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
+                            className="w-full border-2 border-gray-300 px-10 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all disabled:bg-gray-100"
                             required
+                            disabled={bookingFor === "self"}
                           />
                         </div>
                       </div>
@@ -550,8 +665,9 @@ const Booking = () => {
                             placeholder="0912 345 678"
                             value={patientPhone}
                             onChange={(e) => setPatientPhone(e.target.value)}
-                            className="w-full border-2 border-gray-300 px-10 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
+                            className="w-full border-2 border-gray-300 px-10 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all disabled:bg-gray-100"
                             required
+                            disabled={bookingFor === "self"}
                           />
                         </div>
                       </div>
@@ -569,25 +685,26 @@ const Booking = () => {
                             placeholder="example@gmail.com"
                             value={patientEmail}
                             onChange={(e) => setPatientEmail(e.target.value)}
-                            className="w-full border-2 border-gray-300 px-10 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
+                            className="w-full border-2 border-gray-300 px-10 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all disabled:bg-gray-100"
+                            disabled={bookingFor === "self"}
                           />
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Tuổi <span className="text-red-500">*</span>
+                            Ngày sinh <span className="text-red-500">*</span>
                           </label>
                           <input
-                            type="number"
-                            placeholder="25"
-                            value={patientAge}
-                            onChange={(e) => setPatientAge(e.target.value)}
-                            className="w-full border-2 border-gray-300 px-3 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
-                            min="0"
-                            max="150"
+                            type="date"
+                            value={dob}
+                            onChange={(e) => setDob(e.target.value)}
+                            className="w-full border-2 border-gray-300 px-3 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all disabled:bg-gray-100"
+                            disabled={bookingFor === "self"}
+                            required
                           />
                         </div>
+
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
                             Giới tính <span className="text-red-500">*</span>
@@ -595,7 +712,8 @@ const Booking = () => {
                           <select
                             value={patientGender}
                             onChange={(e) => setPatientGender(e.target.value)}
-                            className="w-full border-2 border-gray-300 px-3 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all bg-white"
+                            className="w-full border-2 border-gray-300 px-3 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all bg-white disabled:bg-gray-100"
+                            disabled={bookingFor === "self"}
                           >
                             <option value="">Chọn</option>
                             <option value="male">Nam</option>
@@ -607,71 +725,86 @@ const Booking = () => {
                     </div>
                   </div>
 
-                  {/* Thông tin y tế */}
                   <div className="mb-6">
                     <h3 className="font-semibold text-gray-800 mb-4 text-lg">
                       Thông tin y tế
                     </h3>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Lý do khám <span className="text-red-500">*</span>
-                      </label>
-                      <div className="relative">
-                        <FileText
-                          className="absolute left-3 top-3 text-gray-400 pointer-events-none"
-                          size={18}
-                        />
-                        <textarea
-                          placeholder="Mô tả ngắn gọn về lý do bạn muốn gặp bác sĩ"
-                          value={reasonForVisit}
-                          onChange={(e) => setReasonForVisit(e.target.value)}
-                          className="w-full border-2 border-gray-300 px-10 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all resize-none"
-                          rows={4}
-                          required
-                        />
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Lý do khám <span className="text-red-500">*</span>
+                        </label>
+                        <div className="relative">
+                          <FileText
+                            className="absolute left-3 top-3 text-gray-400 pointer-events-none"
+                            size={18}
+                          />
+                          <textarea
+                            placeholder="Mô tả ngắn gọn về lý do bạn muốn gặp bác sĩ"
+                            value={reasonForVisit}
+                            onChange={(e) => setReasonForVisit(e.target.value)}
+                            className="w-full border-2 border-gray-300 px-10 py-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all resize-none"
+                            rows={3}
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Dị ứng (nếu có)
+                        </label>
+                        <div className="relative">
+                          <FileText
+                            className="absolute left-3 top-3 text-gray-400 pointer-events-none"
+                            size={18}
+                          />
+
+                          <textarea
+                            placeholder="Ví dụ: Dị ứng thuốc kháng sinh, dị ứng hải sản, phấn hoa..."
+                            value={allergies}
+                            onChange={(e) => setAllergies(e.target.value)}
+                            className="w-full border-2 border-gray-300 px-10 py-3 rounded-lg 
+                                       focus:ring-2 focus:ring-green-500 focus:border-green-500 
+                                       transition-all resize-none"
+                            rows={2}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Tiền sử bệnh (medical history)
+                        </label>
+                        <div className="relative">
+                          <FileText
+                            className="absolute left-3 top-3 text-gray-400 pointer-events-none"
+                            size={18}
+                          />
+                          <textarea
+                            placeholder="Ví dụ: Tiểu đường, huyết áp cao, phẫu thuật tim, hen suyễn..."
+                            value={medicalHistory}
+                            onChange={(e) => setMedicalHistory(e.target.value)}
+                            className="w-full border-2 border-gray-300 px-10 py-3 rounded-lg 
+                                       focus:ring-2 focus:ring-green-500 focus:border-green-500 
+                                       transition-all resize-none"
+                            rows={3}
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
-
-                  {/* Triệu chứng */}
-                  <div className="mb-2">
-                    <h3 className="font-semibold text-gray-800 mb-3 text-lg">
-                      Triệu chứng
-                    </h3>
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      {[
-                        "Đau đầu",
-                        "Sốt",
-                        "Ho",
-                        "Đau bụng",
-                        "Chóng mặt",
-                        "Buồn nôn",
-                        "Mệt mỏi",
-                        "Xem thêm...",
-                      ].map((symptom) => (
-                        <button
-                          key={symptom}
-                          type="button"
-                          className="px-4 py-2 border-2 border-gray-300 rounded-full text-sm hover:bg-green-50 hover:border-green-500 transition-all font-medium text-gray-700"
-                        >
-                          {symptom}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="text-xs text-gray-500">
-                      Triệu chứng phổ biến
-                    </p>
                   </div>
                 </div>
               )}
 
-              {/* Buttons */}
+              {/* Nút điều hướng */}
               <div className="flex justify-between mt-8 pt-6 border-t">
                 {step > 1 ? (
                   <button
                     type="button"
                     onClick={prevStep}
-                    className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
+                    className="px-6 py-3 border-2 border-gray-300 text-gray-700 
+                               rounded-lg hover:bg-gray-50 transition-colors font-medium"
                   >
                     Quay lại
                   </button>
@@ -682,7 +815,8 @@ const Booking = () => {
                   <button
                     type="button"
                     onClick={nextStep}
-                    className="px-8 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium shadow-md"
+                    className="px-8 py-3 bg-green-600 text-white rounded-lg 
+                               hover:bg-green-700 transition-colors font-medium shadow-md"
                   >
                     Tiếp tục
                   </button>
@@ -690,7 +824,9 @@ const Booking = () => {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="px-8 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium shadow-md disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    className="px-8 py-3 bg-green-600 text-white rounded-lg 
+                               hover:bg-green-700 transition-colors font-medium shadow-md 
+                               disabled:bg-gray-400 disabled:cursor-not-allowed"
                   >
                     {isSubmitting ? "Đang xử lý..." : "Xác nhận đặt lịch"}
                   </button>

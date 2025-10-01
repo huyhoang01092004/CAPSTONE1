@@ -1,6 +1,5 @@
 import * as PatientModel from "../models/Patient.js";
-
-// 📌 Lấy danh sách bệnh nhân (sau này có thể thêm phân trang)
+// 📌 Lấy danh sách bệnh nhân
 export const getPatients = async (req, res) => {
   try {
     const patients = await PatientModel.findAll();
@@ -38,10 +37,12 @@ export const getPatientByUserId = async (req, res) => {
     }
     res.json({ success: true, data: patient });
   } catch (err) {
+    console.error("❌ getPatientByUserId error:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 };
-// 📌 Tạo bệnh nhân mới
+
+// 📌 Tạo bệnh nhân mới (có user_id)
 export const createPatient = async (req, res) => {
   try {
     if (!req.body.user_id) {
@@ -54,6 +55,25 @@ export const createPatient = async (req, res) => {
     res.status(201).json({ success: true, patient_id: id });
   } catch (err) {
     console.error("❌ createPatient error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// 📌 Tạo bệnh nhân guest (đặt lịch cho người khác)
+export const createGuestPatient = async (req, res) => {
+  try {
+    const { full_name, phone, email, dob, gender, allergies, medical_history } =
+      req.body;
+
+    // gọi model để tạo user guest + patient
+    const id = await PatientModel.createGuest(
+      { full_name, phone, email, dob, gender },
+      { allergies, medical_history }
+    );
+
+    res.status(201).json({ success: true, patient_id: id });
+  } catch (err) {
+    console.error("❌ createGuestPatient error:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 };
@@ -74,7 +94,7 @@ export const updatePatient = async (req, res) => {
   }
 };
 
-// 📌 Xóa mềm bệnh nhân (deactivate user)
+// 📌 Xóa mềm bệnh nhân
 export const deletePatient = async (req, res) => {
   try {
     const affected = await PatientModel.remove(req.params.id);

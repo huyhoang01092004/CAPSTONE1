@@ -1,5 +1,6 @@
 import db from "../config/db.js";
 
+// ================= LẤY DANH SÁCH TẤT CẢ BỆNH NHÂN =================
 export const findAll = async () => {
   const [rows] = await db.execute(
     `SELECT p.*, 
@@ -13,7 +14,7 @@ export const findAll = async () => {
   return rows;
 };
 
-// Tìm theo patient_id
+// ================= LẤY THEO patient_id =================
 export const findById = async (id) => {
   const [rows] = await db.execute(
     `SELECT p.*, 
@@ -27,7 +28,7 @@ export const findById = async (id) => {
   return rows[0];
 };
 
-// Tìm bệnh nhân theo user_id
+// ================= LẤY THEO user_id =================
 export const findByUserId = async (userId) => {
   const [rows] = await db.execute(
     `SELECT p.*, 
@@ -41,7 +42,7 @@ export const findByUserId = async (userId) => {
   return rows[0];
 };
 
-// Tạo bệnh nhân mới
+// ================= TẠO BỆNH NHÂN (đã có user_id) =================
 export const create = async (data) => {
   const {
     user_id,
@@ -73,39 +74,49 @@ export const create = async (data) => {
   return result.insertId;
 };
 
-// Cập nhật bệnh nhân
+// ================= CẬP NHẬT BỆNH NHÂN =================
 export const update = async (id, data) => {
-  const {
-    insurance_number,
-    blood_type,
-    allergies,
-    medical_history,
-    emergency_full_name,
-    emergency_phone,
-    emergency_relationship,
-  } = data;
+  const fields = [];
+  const values = [];
 
-  const [result] = await db.execute(
-    `UPDATE patients 
-     SET insurance_number=?, blood_type=?, allergies=?, medical_history=?, 
-         emergency_full_name=?, emergency_phone=?, emergency_relationship=?, updated_at=NOW()
-     WHERE patient_id=?`,
-    [
-      insurance_number,
-      blood_type,
-      allergies,
-      medical_history,
-      emergency_full_name,
-      emergency_phone,
-      emergency_relationship,
-      id,
-    ]
-  );
+  if (data.insurance_number !== undefined) {
+    fields.push("insurance_number = ?");
+    values.push(data.insurance_number);
+  }
+  if (data.blood_type !== undefined) {
+    fields.push("blood_type = ?");
+    values.push(data.blood_type);
+  }
+  if (data.allergies !== undefined) {
+    fields.push("allergies = ?");
+    values.push(data.allergies);
+  }
+  if (data.medical_history !== undefined) {
+    fields.push("medical_history = ?");
+    values.push(data.medical_history);
+  }
+  if (data.emergency_full_name !== undefined) {
+    fields.push("emergency_full_name = ?");
+    values.push(data.emergency_full_name);
+  }
+  if (data.emergency_phone !== undefined) {
+    fields.push("emergency_phone = ?");
+    values.push(data.emergency_phone);
+  }
+  if (data.emergency_relationship !== undefined) {
+    fields.push("emergency_relationship = ?");
+    values.push(data.emergency_relationship);
+  }
 
+  fields.push("updated_at = NOW()");
+  const sql = `UPDATE patients SET ${fields.join(", ")} WHERE patient_id = ?`;
+  values.push(id);
+
+  const [result] = await db.execute(sql, values);
   return result.affectedRows;
 };
 
-// Xóa bệnh nhân (soft delete qua users)
+// ================= XÓA MỀM BỆNH NHÂN =================
 export const remove = async (id) => {
   const [result] = await db.execute(
     `UPDATE users 
@@ -114,4 +125,41 @@ export const remove = async (id) => {
     [id]
   );
   return result.affectedRows;
+};
+export const createGuest = async (userData, patientData) => {
+  const parts = (userData.full_name || "").trim().split(/\s+/);
+  const firstName = parts.length > 1 ? parts.pop() : parts[0];
+  const lastName = parts.length > 0 ? parts.join(" ") : "";
+
+  const guestPassword = "GUEST_" + Math.random().toString(36).slice(-8);
+
+  const [resUser] = await db.execute(
+    `INSERT INTO users 
+      (first_name, last_name, email, phone, gender, dob, password, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())`,
+    [
+      firstName || null,
+      lastName || null,
+      userData.email || null,
+      userData.phone || null,
+      userData.gender || null,
+      userData.dob || null,
+      guestPassword,
+    ]
+  );
+
+  const userId = resUser.insertId;
+
+  await db.execute(
+    `INSERT INTO user_role (user_id, role_id, assigned_at) VALUES (?, ?, NOW())`,
+    [userId, 4]
+  );
+
+  const [resPatient] = await db.execute(
+    `INSERT INTO patients (user_id, allergies, medical_history, created_at, updated_at)
+     VALUES (?, ?, ?, NOW(), NOW())`,
+    [userId, patientData.allergies || null, patientData.medical_history || null]
+  );
+
+  return resPatient.insertId;
 };

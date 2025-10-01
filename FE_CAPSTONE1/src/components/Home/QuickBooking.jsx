@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Calendar,
   Clock,
@@ -16,14 +17,19 @@ const QuickBooking = () => {
   const [date, setDate] = useState("");
   const [timeSlot, setTimeSlot] = useState(null);
   const [availableTimeSlots, setAvailableTimeSlots] = useState([]);
+
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
-  // ✅ user & token từ localStorage/sessionStorage
+  // ✅ User + Token
   const [user, setUser] = useState(null);
   const [token, setToken] = useState("");
+  const [loadingUser, setLoadingUser] = useState(true);
 
+  const navigate = useNavigate();
+
+  // ✅ Lấy user/token khi mount
   useEffect(() => {
     const storedUser =
       localStorage.getItem("user") || sessionStorage.getItem("user");
@@ -32,20 +38,32 @@ const QuickBooking = () => {
 
     if (storedUser) setUser(JSON.parse(storedUser));
     if (storedToken) setToken(storedToken);
+
+    setLoadingUser(false);
+  }, []);
+
+  // ✅ Nghe sự kiện login/logout
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const storedUser =
+        localStorage.getItem("user") || sessionStorage.getItem("user");
+      const storedToken =
+        localStorage.getItem("token") || sessionStorage.getItem("token");
+
+      setUser(storedUser ? JSON.parse(storedUser) : null);
+      setToken(storedToken || "");
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
   // 📌 Lấy danh sách khoa
   useEffect(() => {
-    const fetchDepartments = async () => {
-      try {
-        const res = await fetch("http://localhost:5000/api/departments");
-        const data = await res.json();
-        setDepartments(data);
-      } catch (error) {
-        console.error("❌ Lỗi lấy khoa:", error);
-      }
-    };
-    fetchDepartments();
+    fetch("http://localhost:5000/api/departments")
+      .then((res) => res.json())
+      .then((data) => setDepartments(data))
+      .catch((err) => console.error("❌ Lỗi lấy khoa:", err));
   }, []);
 
   // 📌 Lấy danh sách bác sĩ theo khoa
@@ -54,18 +72,10 @@ const QuickBooking = () => {
       setDoctors([]);
       return;
     }
-    const fetchDoctors = async () => {
-      try {
-        const res = await fetch(
-          `http://localhost:5000/api/doctors?department_id=${department}`
-        );
-        const data = await res.json();
-        setDoctors(data);
-      } catch (error) {
-        console.error("❌ Lỗi lấy bác sĩ:", error);
-      }
-    };
-    fetchDoctors();
+    fetch(`http://localhost:5000/api/doctors?department_id=${department}`)
+      .then((res) => res.json())
+      .then((data) => setDoctors(data))
+      .catch((err) => console.error("❌ Lỗi lấy bác sĩ:", err));
   }, [department]);
 
   // 📌 Lấy slot khả dụng
@@ -74,24 +84,14 @@ const QuickBooking = () => {
       setAvailableTimeSlots([]);
       return;
     }
-    const fetchSlots = async () => {
-      try {
-        const res = await fetch(
-          `http://localhost:5000/api/doctors/${doctor}/slots?date=${date}`
-        );
-        const data = await res.json();
-        setAvailableTimeSlots(data.available_slots || []);
-      } catch (error) {
-        console.error("❌ Lỗi lấy slots:", error);
-      }
-    };
-    fetchSlots();
+    fetch(`http://localhost:5000/api/doctors/${doctor}/slots?date=${date}`)
+      .then((res) => res.json())
+      .then((data) => setAvailableTimeSlots(data.available_slots || []))
+      .catch((err) => console.error("❌ Lỗi lấy slots:", err));
   }, [doctor, date]);
 
   // 📌 Format về MySQL DATETIME
-  const formatDateTime = (dateStr, timeStr) => {
-    return `${dateStr} ${timeStr}:00`;
-  };
+  const formatDateTime = (dateStr, timeStr) => `${dateStr} ${timeStr}:00`;
 
   // 📌 Đặt lịch
   const handleSubmit = async (e) => {
@@ -114,7 +114,7 @@ const QuickBooking = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${token}`, // ✅ giống Booking
         },
         body: JSON.stringify({
           patient_id: user.patient_id,
@@ -126,8 +126,6 @@ const QuickBooking = () => {
           reason: "Đặt lịch nhanh qua hệ thống",
           booking_channel: "web",
           created_by_user_id: user.id,
-          cancellation_reason: null,
-          note: null,
         }),
       });
 
@@ -135,7 +133,7 @@ const QuickBooking = () => {
       if (res.ok) {
         setSuccessMsg("✅ Đặt lịch thành công!");
 
-        // 🔄 load lại slot mới
+        // 🔄 Load lại slot mới
         const resSlots = await fetch(
           `http://localhost:5000/api/doctors/${doctor}/slots?date=${date}`
         );
@@ -156,7 +154,7 @@ const QuickBooking = () => {
   return (
     <section className="py-12 bg-white">
       <div className="container mx-auto px-4">
-        <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden">
+        <div className="max-w-3xl mx-auto bg-white rounded-lg shadow-lg overflow-hidden">
           {/* Header */}
           <div className="bg-green-600 text-white p-6 flex justify-between">
             <div>
@@ -254,27 +252,14 @@ const QuickBooking = () => {
                 >
                   <option value="">Chọn Giờ Khám</option>
                   {availableTimeSlots.length > 0 ? (
-                    availableTimeSlots.map((slot) => {
-                      let isPast = false;
-                      const todayStr = new Date().toISOString().split("T")[0];
-                      if (date === todayStr) {
-                        const now = new Date();
-                        const nowMinutes =
-                          now.getHours() * 60 + now.getMinutes();
-                        const [h, m] = slot.start.split(":").map(Number);
-                        const slotMinutes = h * 60 + m;
-                        isPast = slotMinutes <= nowMinutes;
-                      }
-                      return (
-                        <option
-                          key={`${slot.start}-${slot.end}`}
-                          value={slot.start}
-                          disabled={isPast}
-                        >
-                          {slot.start} - {slot.end} {isPast ? "(Hết hạn)" : ""}
-                        </option>
-                      );
-                    })
+                    availableTimeSlots.map((slot) => (
+                      <option
+                        key={`${slot.start}-${slot.end}`}
+                        value={slot.start}
+                      >
+                        {slot.start} - {slot.end}
+                      </option>
+                    ))
                   ) : (
                     <option value="">Không còn slot trống</option>
                   )}
@@ -314,22 +299,6 @@ const QuickBooking = () => {
               </button>
             </div>
           </form>
-
-          {/* Footer */}
-          <div className="bg-gray-50 p-6 border-t flex justify-around">
-            <div className="flex items-center">
-              <User className="text-green-600 mr-2" size={20} />
-              <span>200+ Bác Sĩ</span>
-            </div>
-            <div className="flex items-center">
-              <Calendar className="text-green-600 mr-2" size={20} />
-              <span>Lịch Hẹn Trong Ngày</span>
-            </div>
-            <div className="flex items-center">
-              <Clock className="text-green-600 mr-2" size={20} />
-              <span>Hỗ Trợ 24/7</span>
-            </div>
-          </div>
         </div>
       </div>
     </section>
