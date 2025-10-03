@@ -181,3 +181,41 @@ export const resetPassword = async (req, res) => {
     res.status(400).json({ message: "Token không hợp lệ hoặc đã hết hạn" });
   }
 };
+
+// ======================= ĐỔI MẬT KHẨU (trong Profile Tab) =======================
+export const changePassword = async (req, res) => {
+  try {
+    const { user_id } = req.auth; // 👈 từ middleware verifyToken
+    const { currentPassword, newPassword } = req.body;
+
+    // Lấy user
+    const user = await AuthModel.findById(user_id);
+    if (!user)
+      return res.status(404).json({ message: "Người dùng không tồn tại" });
+
+    // So sánh mật khẩu hiện tại
+    const match = await bcrypt.compare(currentPassword, user.password);
+    if (!match)
+      return res.status(400).json({ message: "Mật khẩu hiện tại không đúng" });
+
+    // Validate mật khẩu mới
+    const passwordRegex = /^(?=.*[@$!%*?&]).{8,}$/;
+    if (!passwordRegex.test(newPassword)) {
+      return res.status(400).json({
+        message:
+          "Mật khẩu mới phải có ít nhất 8 ký tự và chứa ít nhất 1 ký tự đặc biệt (@$!%*?&)",
+      });
+    }
+
+    // Hash mật khẩu mới
+    const hash = await bcrypt.hash(newPassword, 10);
+
+    // Update DB
+    await AuthModel.updatePassword(user_id, hash);
+
+    res.json({ success: true, message: "Đổi mật khẩu thành công" });
+  } catch (err) {
+    console.error("❌ Lỗi changePassword:", err);
+    res.status(500).json({ success: false, message: "Lỗi server" });
+  }
+};

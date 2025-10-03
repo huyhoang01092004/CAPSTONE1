@@ -54,7 +54,6 @@ const Booking = () => {
   const [loadingUser, setLoadingUser] = useState(true);
 
   const userId = storedUser?.id || null;
-  const patientIdFromUser = storedUser?.patient_id || null;
 
   // ✅ Lấy user khi mount
   useEffect(() => {
@@ -62,7 +61,7 @@ const Booking = () => {
       JSON.parse(localStorage.getItem("user")) ||
       JSON.parse(sessionStorage.getItem("user"));
     setStoredUser(user || null);
-    setLoadingUser(false); // Đã load xong
+    setLoadingUser(false);
   }, []);
 
   // ✅ Nghe sự kiện login/logout
@@ -77,14 +76,16 @@ const Booking = () => {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
-  // ✅ Nếu chưa login thì chặn (chỉ check sau khi load xong)
+  // ✅ Nếu chưa login thì chặn
   useEffect(() => {
     if (!loadingUser && !storedUser) {
-      alert("Vui lòng đăng nhập để đặt lịch!");
-      navigate("/login");
+      navigate("/login", {
+        state: { message: "Vui lòng đăng nhập để đặt lịch!" },
+      });
     }
   }, [loadingUser, storedUser, navigate]);
 
+  // ✅ Lấy departments
   useEffect(() => {
     fetch("http://localhost:5000/api/departments")
       .then((res) => res.json())
@@ -92,6 +93,7 @@ const Booking = () => {
       .catch((err) => console.error("❌ Lỗi lấy departments:", err));
   }, []);
 
+  // ✅ Lấy doctors theo department
   useEffect(() => {
     if (department) {
       fetch(`http://localhost:5000/api/doctors?department_id=${department}`)
@@ -103,6 +105,7 @@ const Booking = () => {
     }
   }, [department]);
 
+  // ✅ Lấy slots theo doctor + date
   useEffect(() => {
     if (doctor && date) {
       fetch(`http://localhost:5000/api/doctors/${doctor}/slots?date=${date}`)
@@ -110,12 +113,10 @@ const Booking = () => {
         .then((data) => {
           const slots = data.available_slots || [];
           const now = new Date();
-
           const filteredSlots = slots.filter((slot) => {
             const slotStart = new Date(`${date}T${slot.start}:00`);
-            return slotStart > now; // chỉ lấy slot còn trong tương lai
+            return slotStart > now;
           });
-
           setAvailableTimeSlots(filteredSlots);
         })
         .catch((err) => console.error("❌ Lỗi lấy slots:", err));
@@ -124,21 +125,44 @@ const Booking = () => {
     }
   }, [doctor, date]);
 
+  // ✅ Lấy patient theo user
   useEffect(() => {
     if (userId && bookingFor === "self") {
       fetch(`http://localhost:5000/api/patients/by-user/${userId}`)
         .then((res) => res.json())
-        .then((data) => {
-          if (data.success) {
+        .then(async (data) => {
+          if (data.success && data.data) {
             const p = data.data;
             setPatientId(p.patient_id);
             setPatientName(p.full_name || "");
             setPatientPhone(p.phone || "");
             setPatientEmail(p.email || "");
             setPatientGender(p.gender || "");
-            setDob(p.dob ? p.dob.split("T")[0] : ""); // Lấy yyyy-MM-dd
+            setDob(p.dob ? p.dob.split("T")[0] : "");
             setAllergies(p.allergies || "");
             setMedicalHistory(p.medical_history || "");
+          } else {
+            // ❌ Nếu chưa có patient -> gọi API create
+            const resCreate = await fetch(
+              "http://localhost:5000/api/patients/create",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ user_id: userId }),
+              }
+            );
+            const dataCreate = await resCreate.json();
+            if (dataCreate.success && dataCreate.data) {
+              const p = dataCreate.data;
+              setPatientId(p.patient_id);
+              setPatientName(p.full_name || "");
+              setPatientPhone(p.phone || "");
+              setPatientEmail(p.email || "");
+              setPatientGender(p.gender || "");
+              setDob(p.dob ? p.dob.split("T")[0] : "");
+              setAllergies(p.allergies || "");
+              setMedicalHistory(p.medical_history || "");
+            }
           }
         })
         .catch((err) => console.error("❌ Lỗi lấy patient:", err));
@@ -180,8 +204,14 @@ const Booking = () => {
     try {
       let finalPatientId = patientId;
 
+      // ==================== ĐẶT LỊCH CHO NGƯỜI KHÁC ====================
       if (bookingFor === "other") {
-        // 👉 Nếu đặt lịch cho người khác thì gọi API createGuestPatient
+        if (!patientName || !patientPhone || !dob || !patientGender) {
+          alert("❌ Vui lòng nhập đầy đủ thông tin cho bệnh nhân.");
+          setIsSubmitting(false);
+          return;
+        }
+
         const resPatient = await fetch(
           "http://localhost:5000/api/patients/guest",
           {
@@ -200,28 +230,45 @@ const Booking = () => {
         );
 
         const dataPatient = await resPatient.json();
+
         if (!resPatient.ok || !dataPatient.success) {
           throw new Error(
             dataPatient.message || "Tạo bệnh nhân guest thất bại"
           );
         }
-        finalPatientId = dataPatient.patient_id; // id mới tạo
-      } else {
-        // 👉 Nếu đặt lịch cho chính mình thì update thông tin y tế
-        if (finalPatientId) {
-          await fetch(`http://localhost:5000/api/patients/${finalPatientId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              allergies,
-              medical_history: medicalHistory,
-            }),
-          });
+
+        // ✅ Lấy đúng patient_id từ backend trả về
+        finalPatientId = dataPatient.data?.patient_id || dataPatient.patient_id;
+
+        if (!finalPatientId) {
+          throw new Error("Không tìm thấy patient_id khi tạo bệnh nhân guest");
         }
       }
+      // ==================== ĐẶT LỊCH CHO BẢN THÂN ====================
+      else {
+        if (!finalPatientId) {
+          alert("❌ Không tìm thấy thông tin bệnh nhân.");
+          setIsSubmitting(false);
+          return;
+        }
 
-      // 2️⃣ Tạo appointment
+        // Cập nhật thông tin y tế trước khi đặt lịch
+        await fetch(`http://localhost:5000/api/patients/${finalPatientId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            allergies,
+            medical_history: medicalHistory,
+          }),
+        });
+      }
+
+      // ==================== TÁCH GIỜ BẮT ĐẦU & KẾT THÚC ====================
       const [start, end] = timeSlot.split("-");
+      const scheduled_start = `${date} ${start.trim()}:00`;
+      const scheduled_end = `${date} ${end.trim()}:00`;
+
+      // ==================== TẠO APPOINTMENT ====================
       const res = await fetch("http://localhost:5000/api/appointments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -229,8 +276,8 @@ const Booking = () => {
           patient_id: finalPatientId,
           doctor_id: doctor,
           department_id: department,
-          scheduled_start: `${date} ${start}:00`,
-          scheduled_end: `${date} ${end}:00`,
+          scheduled_start,
+          scheduled_end,
           reason: reasonForVisit,
           booking_channel: "web",
           status: "pending",
@@ -247,7 +294,7 @@ const Booking = () => {
       }
     } catch (err) {
       console.error("❌ Submit error:", err);
-      alert("Có lỗi xảy ra khi xử lý. Vui lòng thử lại!");
+      alert(err.message || "Có lỗi xảy ra khi xử lý. Vui lòng thử lại!");
     } finally {
       setIsSubmitting(false);
     }
@@ -273,7 +320,6 @@ const Booking = () => {
   const selectedDoctor = doctor
     ? doctors.find((d) => String(d.doctor_id) === String(doctor))
     : null;
-
   return (
     <div className="bg-gray-50 min-h-screen pt-20">
       <div className="container mx-auto px-4 py-8">

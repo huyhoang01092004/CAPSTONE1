@@ -4,20 +4,26 @@ import {
   login,
   me,
   verifyEmail,
-  forgotPassword, // ✅ thêm
-  resetPassword, // ✅ thêm
+  forgotPassword,
+  resetPassword,
+  changePassword, // ✅ thêm
 } from "../controllers/auth.controller.js";
 import { verifyToken } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
-router.post("/register", register);
-router.get("/verify", verifyEmail);
-router.post("/login", login);
-router.get("/me", verifyToken, me);
+// =================== Auth ===================
+router.post("/register", register); // Đăng ký
+router.get("/verify", verifyEmail); // Xác thực email
+router.post("/login", login); // Đăng nhập
+router.get("/me", verifyToken, me); // Lấy profile từ token
 
 // =================== Forgot / Reset Password ===================
-router.post("/forgot-password", forgotPassword); // nhập email để gửi link reset
-router.post("/reset-password", resetPassword); // đổi mật khẩu bằng token
+router.post("/forgot-password", forgotPassword); // Nhập email để gửi link reset
+router.post("/reset-password", resetPassword); // Đổi mật khẩu bằng token gửi qua email
+
+// =================== Change Password (khi đã đăng nhập) ===================
+router.post("/change-password", verifyToken, changePassword);
+router.put("/change-password", verifyToken, changePassword);
 
 export default router;

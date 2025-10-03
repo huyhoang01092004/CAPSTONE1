@@ -58,6 +58,37 @@ const QuickBooking = () => {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
+  // ✅ Check/ tạo patient_id cho user
+  useEffect(() => {
+    if (user?.id && !user.patient_id) {
+      fetch(`http://localhost:5000/api/patients/by-user/${user.id}`)
+        .then((res) => res.json())
+        .then(async (data) => {
+          if (data.success && data.data) {
+            setUser((prev) => ({ ...prev, patient_id: data.data.patient_id }));
+          } else {
+            // ❌ Nếu chưa có patient -> tạo mới
+            const resCreate = await fetch(
+              "http://localhost:5000/api/patients/create",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ user_id: user.id }),
+              }
+            );
+            const dataCreate = await resCreate.json();
+            if (dataCreate.success && dataCreate.data) {
+              setUser((prev) => ({
+                ...prev,
+                patient_id: dataCreate.data.patient_id,
+              }));
+            }
+          }
+        })
+        .catch((err) => console.error("❌ Lỗi lấy/tạo patient:", err));
+    }
+  }, [user?.id]);
+
   // 📌 Lấy danh sách khoa
   useEffect(() => {
     fetch("http://localhost:5000/api/departments")
@@ -103,6 +134,10 @@ const QuickBooking = () => {
       setErrorMsg("⚠️ Bạn cần đăng nhập trước khi đặt lịch!");
       return;
     }
+    if (!user.patient_id) {
+      setErrorMsg("⚠️ Không tìm thấy hồ sơ bệnh nhân cho tài khoản này!");
+      return;
+    }
     if (!department || !doctor || !date || !timeSlot) {
       setErrorMsg("⚠️ Vui lòng chọn đầy đủ thông tin!");
       return;
@@ -114,12 +149,12 @@ const QuickBooking = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`, // ✅ giống Booking
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           patient_id: user.patient_id,
-          doctor_id: doctor,
-          department_id: department,
+          doctor_id: parseInt(doctor),
+          department_id: parseInt(department),
           scheduled_start: formatDateTime(date, timeSlot.start),
           scheduled_end: formatDateTime(date, timeSlot.end),
           status: "pending",

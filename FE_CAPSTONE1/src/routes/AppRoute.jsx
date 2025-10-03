@@ -13,6 +13,7 @@ import DoctorDetails from "../pages/DoctorDetails";
 import ForgotPasswordPage from "../pages/ForgotPasswordPage";
 import ResetPasswordPage from "../pages/ResetPasswordPage";
 import Appointments from "../pages/Appointments";
+import Profile from "../pages/Profile";
 
 // ✅ Component auto scroll lên đầu khi đổi route
 const ScrollToTop = () => {
@@ -45,6 +46,7 @@ const AppRoute = () => {
         <Route path="/doctor/:id" element={<DoctorDetails />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/appointments" element={<Appointments />} />
+        <Route path="/profile" element={<Profile />} />
 
         {/* fallback 404 */}
         <Route path="*" element={<h1>404 - Không tìm thấy trang</h1>} />

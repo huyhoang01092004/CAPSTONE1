@@ -35,6 +35,9 @@ export function LoginPage() {
 
       // ✅ Lưu token & user info
       const storage = remember ? localStorage : sessionStorage;
+      // ✅ Lưu token & user info luôn vào localStorage
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
       storage.setItem("token", data.token);
       storage.setItem("user", JSON.stringify(data.user));
 
