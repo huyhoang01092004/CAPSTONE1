@@ -1,0 +1,46 @@
+# ============================================
+# AI Service - Medical Chatbot Dependencies
+# Python 3.9+
+# ============================================
+
+# FastAPI Framework
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+python-dotenv==1.0.1
+
+# Database
+mysql-connector-python==9.1.0
+
+# NLP Libraries - English
+spacy==3.8.2
+# Cần chạy: python -m spacy download en_core_web_sm
+# Cần chạy: python -m spacy download en_ner_bc5cdr_md
+
+# NLP Libraries - Medical
+scispacy==0.5.5
+# SciSpacy models cho medical text processing
+
+# Vietnamese NLP
+underthesea==8.3.0
+# Xử lý ngôn ngữ tiếng Việt: tokenization, POS tagging
+
+# Fuzzy Matching
+fuzzywuzzy==0.18.0
+python-Levenshtein==0.26.1
+# Khớp triệu chứng gần đúng (typo, variations)
+
+# HTTP & File Handling
+python-multipart==0.0.20
+# Xử lý multipart/form-data requests
+
+# Optional: Logging & Monitoring
+# python-json-logger==2.0.7
+# sentry-sdk==1.40.0
+
+# ============================================
+# Installation Commands:
+# pip install -r requirements.txt
+# python -m spacy download en_core_web_sm
+# python -m spacy download en_ner_bc5cdr_md
+# ============================================
